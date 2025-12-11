@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         Torn: Supremacy Merit Helper
 // @namespace    http://tampermonkey.net/
-// @version      1.3
+// @version      1.4
 // @description  Calculate your position relative to the top 5% of the team
 // @author       ARCANE [2297468]
 // @match        https://www.torn.com/page.php?sid=competition*
-// @grant        none
 // @updateURL    https://greasyfork.org/scripts/558648/meta.json
 // @downloadURL  https://greasyfork.org/scripts/558648/code.user.js
+// @grant        none
+
 // @license MIT
 
 // ==/UserScript==
@@ -511,10 +512,10 @@
         const hasAllData = collectedData.userRow && collectedData.userPosition !== null && collectedData.userAttacks !== null && 
                           collectedData.top5PercentAttacks !== null && collectedData.top5PercentPosition !== null;
 
-        // Remove collecting toast if we have all data
+        // Remove collecting/scroll toast if we have all data
         if (hasAllData) {
             const collectingToast = document.getElementById('torn-position-toast');
-            if (collectingToast && collectingToast.textContent.includes('Collecting data')) {
+            if (collectingToast) {
                 collectingToast.remove();
             }
         }
@@ -731,7 +732,7 @@
             top5PercentPosition: null
         };
 
-        showToast('Keep scrolling until you see a popup', 'success');
+        showToast('Keep scrolling down until you see a popup', 'success');
 
         // Check immediately
         checkAndShowToasts();
