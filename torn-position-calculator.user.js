@@ -32,10 +32,116 @@
         }
     }
 
+    // Get user's team name from localStorage
+    function getUserTeamName() {
+        return localStorage.getItem('torn-position-user-team-name');
+    }
+
+    // Save user's team name to localStorage
+    function saveUserTeamName(name) {
+        if (name && name.trim()) {
+            localStorage.setItem('torn-position-user-team-name', name.trim());
+        } else {
+            localStorage.removeItem('torn-position-user-team-name');
+        }
+    }
+
     // Check if URL is a team page
     function isTeamPage() {
         const hash = window.location.hash;
         return hash && /^#\/team\/\d+/.test(hash);
+    }
+
+    // Get current team name from team page
+    function getCurrentTeamName() {
+        // Try the selector from team header
+        const teamHeader = document.querySelector('.teamHeaderWrapper___AHQVJ strong');
+        if (teamHeader) {
+            const teamName = teamHeader.textContent || teamHeader.innerText;
+            if (teamName && teamName.trim()) {
+                console.log('[Supremacy Merit Helper] Found current team name:', teamName.trim());
+                return teamName.trim();
+            }
+        }
+        console.log('[Supremacy Merit Helper] Could not find current team name');
+        return null;
+    }
+
+    // Auto-detect user's team name from competition main page
+    function autoDetectUserTeamName() {
+        // Only try on main competition page
+        if (!isCompetitionMainPage()) {
+            return null;
+        }
+
+        console.log('[Supremacy Merit Helper] Attempting to auto-detect user team name...');
+
+        // First, try the description div with "You have been placed in <strong>Team Name</strong>"
+        const descriptionDiv = document.querySelector('.description___OzHl9');
+        if (descriptionDiv) {
+            const strong = descriptionDiv.querySelector('strong');
+            if (strong) {
+                const teamName = strong.textContent || strong.innerText;
+                if (teamName && teamName.trim()) {
+                    console.log('[Supremacy Merit Helper] Found team name in description div strong tag:', teamName.trim());
+                    return teamName.trim();
+                }
+            }
+        }
+
+        // Fallback: Find user's team row and try other methods
+        let userTeamRow = null;
+        userTeamRow = document.querySelector('.dataGridRow___FAAJF.row___jLX1I.yourRow___R9Oi8');
+        if (!userTeamRow) {
+            userTeamRow = document.querySelector('.yourRow___R9Oi8');
+        }
+        if (!userTeamRow) {
+            const dataGridBody = document.querySelector('.dataGridBody___Y9aVA');
+            if (dataGridBody) {
+                userTeamRow = dataGridBody.querySelector('.yourRow___R9Oi8');
+            }
+        }
+
+        if (!userTeamRow) {
+            console.log('[Supremacy Merit Helper] Could not find user team row for name detection');
+            return null;
+        }
+
+        console.log('[Supremacy Merit Helper] Found user team row for name detection');
+
+        // Find team name - typically in the first cell or a name cell
+        // Try multiple selectors
+        const nameCell = userTeamRow.querySelector('.teamNameCell, [class*="name"], .dataGridData___dV6BM:first-child');
+        if (nameCell) {
+            const nameText = nameCell.textContent || nameCell.innerText;
+            if (nameText && nameText.trim()) {
+                console.log('[Supremacy Merit Helper] Found team name in nameCell:', nameText.trim());
+                return nameText.trim();
+            }
+        }
+
+        // Try finding a link or strong tag within the row
+        const link = userTeamRow.querySelector('a[href*="/team/"]');
+        if (link) {
+            const linkText = link.textContent || link.innerText;
+            if (linkText && linkText.trim()) {
+                console.log('[Supremacy Merit Helper] Found team name in link:', linkText.trim());
+                return linkText.trim();
+            }
+        }
+
+        // Try finding strong tag
+        const strong = userTeamRow.querySelector('strong');
+        if (strong) {
+            const strongText = strong.textContent || strong.innerText;
+            if (strongText && strongText.trim()) {
+                console.log('[Supremacy Merit Helper] Found team name in strong tag:', strongText.trim());
+                return strongText.trim();
+            }
+        }
+
+        console.log('[Supremacy Merit Helper] Could not find team name');
+        return null;
     }
 
     // Check if URL is the main competition page
@@ -154,6 +260,22 @@
         // Only show if on a team page
         if (!isTeamPage()) {
             // Remove controls if they exist but we're not on a team page
+            const existing = document.getElementById('torn-position-controls');
+            if (existing) {
+                existing.remove();
+            }
+            return;
+        }
+
+        // Check if we're viewing the user's team
+        const userTeamName = getUserTeamName();
+        const currentTeamName = getCurrentTeamName();
+        
+        console.log('[Supremacy Merit Helper] Checking team match - User team:', userTeamName, 'Current team:', currentTeamName);
+        
+        if (userTeamName && currentTeamName && userTeamName !== currentTeamName) {
+            console.log('[Supremacy Merit Helper] Not viewing user\'s team, hiding controls');
+            // Remove controls if they exist
             const existing = document.getElementById('torn-position-controls');
             if (existing) {
                 existing.remove();
@@ -750,7 +872,7 @@
         // Auto-detect team size on competition main page
         if (isCompetitionMainPage()) {
             console.log('[Supremacy Merit Helper] On competition main page, attempting auto-detect');
-            // Helper function to handle detected team size
+            // Helper function to handle detected team size and team name
             const handleDetectedTeamSize = (detectedSize) => {
                 // Save if not already saved
                 const currentSaved = getTeamSize();
@@ -765,6 +887,15 @@
                 if (input && !input.value) {
                     console.log('[Supremacy Merit Helper] Updating input field with teamSize:', detectedSize);
                     input.value = detectedSize;
+                }
+                
+                // Also detect and save team name
+                const detectedTeamName = autoDetectUserTeamName();
+                if (detectedTeamName) {
+                    console.log('[Supremacy Merit Helper] Detected user team name:', detectedTeamName);
+                    saveUserTeamName(detectedTeamName);
+                } else {
+                    console.log('[Supremacy Merit Helper] Could not detect user team name');
                 }
             };
             
