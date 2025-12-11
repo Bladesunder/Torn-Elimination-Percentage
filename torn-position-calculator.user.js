@@ -45,16 +45,8 @@
         document.body.appendChild(button);
     }
 
-    // Calculate position
-    function calculatePosition() {
-        // Find user's row (has class "yourRow___R9Oi8")
-        const userRow = document.querySelector('.dataGridRow___FAAJF.teamRow___R3ZLF.yourRow___R9Oi8');
-        
-        if (!userRow) {
-            showToast('Could not find your row. Make sure you can see yourself in the list.', 'error');
-            return;
-        }
-        
+    // Calculate position from found row
+    function calculatePositionFromRow(userRow) {
         // Get transform style
         const style = window.getComputedStyle(userRow);
         const transform = style.transform || style.webkitTransform || style.mozTransform;
@@ -111,6 +103,95 @@
         // Calculate position: translateY / 36 + 1
         const position = Math.floor(translateY / 36) + 1;
         showToast(`Your position: ${position}`, 'success');
+    }
+
+    // Scroll and search for user's row
+    function scrollAndFindRow() {
+        const virtualContainer = document.querySelector('.virtualContainer___Ft72x');
+        if (!virtualContainer) {
+            showToast('Could not find the competition list container.', 'error');
+            return;
+        }
+
+        // Find the scrollable container (usually parent of virtual container)
+        let scrollableElement = virtualContainer.parentElement;
+        while (scrollableElement && scrollableElement !== document.body) {
+            const overflow = window.getComputedStyle(scrollableElement).overflowY;
+            if (overflow === 'auto' || overflow === 'scroll') {
+                break;
+            }
+            scrollableElement = scrollableElement.parentElement;
+        }
+
+        // If no scrollable container found, use window
+        if (!scrollableElement || scrollableElement === document.body) {
+            scrollableElement = window;
+        }
+
+        let scrollPosition = 0;
+        const scrollStep = 300; // Scroll 300px at a time
+        const maxScrollAttempts = 150; // Maximum number of scroll attempts
+        let attempts = 0;
+
+        showToast('Scrolling to find your row...', 'success');
+
+        const scrollInterval = setInterval(() => {
+            attempts++;
+            
+            // Check if row exists now
+            const userRow = document.querySelector('.dataGridRow___FAAJF.teamRow___R3ZLF.yourRow___R9Oi8');
+            if (userRow) {
+                clearInterval(scrollInterval);
+                // Small delay to ensure row is fully rendered
+                setTimeout(() => {
+                    calculatePositionFromRow(userRow);
+                }, 150);
+                return;
+            }
+
+            // If we've tried too many times, give up
+            if (attempts >= maxScrollAttempts) {
+                clearInterval(scrollInterval);
+                showToast('Could not find your row after scrolling. You may not be in the competition.', 'error');
+                return;
+            }
+
+            // Scroll down
+            if (scrollableElement === window) {
+                scrollPosition += scrollStep;
+                window.scrollTo({
+                    top: scrollPosition,
+                    behavior: 'auto' // Use 'auto' for faster scrolling
+                });
+            } else {
+                scrollPosition += scrollStep;
+                scrollableElement.scrollTop = scrollPosition;
+            }
+        }, 150); // Check every 150ms
+    }
+
+    // Calculate position
+    function calculatePosition() {
+        // Find user's row (has class "yourRow___R9Oi8")
+        const userRow = document.querySelector('.dataGridRow___FAAJF.teamRow___R3ZLF.yourRow___R9Oi8');
+        
+        if (!userRow) {
+            // Ask user for permission to scroll
+            const shouldScroll = confirm(
+                'Could not find your row in the visible area.\n\n' +
+                'Would you like the script to scroll the page to find your row?\n\n' +
+                'Click OK to start scrolling, or Cancel to abort.'
+            );
+            
+            if (shouldScroll) {
+                scrollAndFindRow();
+            } else {
+                showToast('Search cancelled. Make sure you can see yourself in the list.', 'error');
+            }
+            return;
+        }
+        
+        calculatePositionFromRow(userRow);
     }
 
     // Show toast notification
