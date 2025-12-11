@@ -11,16 +11,91 @@
 (function() {
     'use strict';
 
-    // Create floating button
-    function createButton() {
-        const button = document.createElement('button');
-        button.textContent = 'Calculate';
-        button.id = 'torn-position-calc-btn';
-        button.style.cssText = `
+    // Get team size from localStorage
+    function getTeamSize() {
+        const saved = localStorage.getItem('torn-position-team-size');
+        return saved ? parseInt(saved, 10) : null;
+    }
+
+    // Save team size to localStorage
+    function saveTeamSize(size) {
+        if (size && size > 0) {
+            localStorage.setItem('torn-position-team-size', size.toString());
+        } else {
+            localStorage.removeItem('torn-position-team-size');
+        }
+    }
+
+    // Create floating controls (input + button)
+    function createControls() {
+        // Check if already exists
+        if (document.getElementById('torn-position-controls')) {
+            return;
+        }
+
+        const container = document.createElement('div');
+        container.id = 'torn-position-controls';
+        container.style.cssText = `
             position: fixed;
             top: 20px;
             right: 20px;
             z-index: 10000;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        `;
+
+        // Create label and input for team size
+        const label = document.createElement('label');
+        label.textContent = 'Team Size:';
+        label.style.cssText = `
+            color: white;
+            font-size: 14px;
+            font-weight: bold;
+            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
+        `;
+
+        const input = document.createElement('input');
+        input.type = 'number';
+        input.id = 'torn-position-team-size-input';
+        input.placeholder = 'Enter team size';
+        input.min = '1';
+        input.style.cssText = `
+            width: 120px;
+            padding: 8px 12px;
+            border: 2px solid #4CAF50;
+            border-radius: 5px;
+            font-size: 14px;
+            background-color: white;
+        `;
+
+        // Load saved team size
+        const savedTeamSize = getTeamSize();
+        if (savedTeamSize) {
+            input.value = savedTeamSize;
+        }
+
+        // Save on blur (when user leaves the input)
+        input.addEventListener('blur', () => {
+            const value = parseInt(input.value, 10);
+            if (value && value > 0) {
+                saveTeamSize(value);
+            } else if (input.value === '') {
+                saveTeamSize(null);
+            }
+        });
+
+        // Also save on Enter key
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                input.blur();
+            }
+        });
+
+        const button = document.createElement('button');
+        button.textContent = 'Calculate';
+        button.id = 'torn-position-calc-btn';
+        button.style.cssText = `
             padding: 10px 20px;
             background-color: #4CAF50;
             color: white;
@@ -41,8 +116,12 @@
         });
         
         button.addEventListener('click', calculatePosition);
+
+        container.appendChild(label);
+        container.appendChild(input);
+        container.appendChild(button);
         
-        document.body.appendChild(button);
+        document.body.appendChild(container);
     }
 
     // Calculate position from found row
@@ -50,6 +129,8 @@
         // Get transform style
         const style = window.getComputedStyle(userRow);
         const transform = style.transform || style.webkitTransform || style.mozTransform;
+        
+        let translateY = 0;
         
         if (!transform || transform === 'none') {
             // Try inline style as fallback
@@ -61,48 +142,53 @@
                 return;
             }
             
-            const translateY = parseInt(translateYMatch[1], 10);
-            const position = Math.floor(translateY / 36) + 1;
-            showToast(`Your position: ${position}`, 'success');
-            return;
-        }
-        
-        // Extract translateY from matrix or translate
-        let translateY = 0;
-        
-        if (transform.includes('matrix') || transform.includes('matrix3d')) {
-            // Matrix format: matrix(1, 0, 0, 1, tx, ty) or matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, tx, ty, tz, 1)
-            const matrixMatch = transform.match(/matrix(?:3d)?\([^)]+\)/);
-            if (matrixMatch) {
-                const values = matrixMatch[0].match(/[\d.]+/g);
-                if (values && values.length >= 6) {
-                    translateY = parseFloat(values[values.length >= 14 ? 13 : 5]);
+            translateY = parseInt(translateYMatch[1], 10);
+        } else {
+            // Extract translateY from matrix or translate
+            if (transform.includes('matrix') || transform.includes('matrix3d')) {
+                // Matrix format: matrix(1, 0, 0, 1, tx, ty) or matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, tx, ty, tz, 1)
+                const matrixMatch = transform.match(/matrix(?:3d)?\([^)]+\)/);
+                if (matrixMatch) {
+                    const values = matrixMatch[0].match(/[\d.]+/g);
+                    if (values && values.length >= 6) {
+                        translateY = parseFloat(values[values.length >= 14 ? 13 : 5]);
+                    }
+                }
+            } else if (transform.includes('translateY')) {
+                // Direct translateY format
+                const translateYMatch = transform.match(/translateY\(([^)]+)\)/);
+                if (translateYMatch) {
+                    translateY = parseFloat(translateYMatch[1]);
                 }
             }
-        } else if (transform.includes('translateY')) {
-            // Direct translateY format
-            const translateYMatch = transform.match(/translateY\(([^)]+)\)/);
-            if (translateYMatch) {
-                translateY = parseFloat(translateYMatch[1]);
-            }
-        }
-        
-        if (translateY === 0 && !transform.includes('translateY')) {
-            // Fallback: check inline style
-            const inlineStyle = userRow.getAttribute('style');
-            const translateYMatch = inlineStyle ? inlineStyle.match(/translateY\((\d+)px\)/) : null;
             
-            if (translateYMatch) {
-                translateY = parseInt(translateYMatch[1], 10);
-            } else {
-                showToast('Could not extract translateY value.', 'error');
-                return;
+            if (translateY === 0 && !transform.includes('translateY')) {
+                // Fallback: check inline style
+                const inlineStyle = userRow.getAttribute('style');
+                const translateYMatch = inlineStyle ? inlineStyle.match(/translateY\((\d+)px\)/) : null;
+                
+                if (translateYMatch) {
+                    translateY = parseInt(translateYMatch[1], 10);
+                } else {
+                    showToast('Could not extract translateY value.', 'error');
+                    return;
+                }
             }
         }
         
         // Calculate position: translateY / 36 + 1
         const position = Math.floor(translateY / 36) + 1;
-        showToast(`Your position: ${position}`, 'success');
+        
+        // Get team size and calculate percentile if available
+        const teamSize = getTeamSize();
+        let message = `Position: ${position}`;
+        
+        if (teamSize && teamSize > 0) {
+            const percentile = ((position / teamSize) * 100).toFixed(2);
+            message += ` | Percentile: ${percentile}%`;
+        }
+        
+        showToast(message, 'success');
     }
 
     // Scroll and search for user's row
@@ -251,15 +337,15 @@
 
     // Initialize when page loads
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', createButton);
+        document.addEventListener('DOMContentLoaded', createControls);
     } else {
-        createButton();
+        createControls();
     }
     
     // Also handle dynamic content (SPA navigation)
     const observer = new MutationObserver(() => {
-        if (!document.getElementById('torn-position-calc-btn')) {
-            createButton();
+        if (!document.getElementById('torn-position-controls')) {
+            createControls();
         }
     });
     
