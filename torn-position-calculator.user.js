@@ -150,60 +150,180 @@
         document.body.appendChild(container);
     }
 
-    // Calculate position from found row
-    function calculatePositionFromRow(userRow) {
-        // Get transform style
-        const style = window.getComputedStyle(userRow);
+    // Get attack count from a row
+    function getAttackCount(row) {
+        const attackElement = row.querySelector('.attacks___IJtzw span');
+        if (attackElement) {
+            return parseInt(attackElement.textContent.trim(), 10);
+        }
+        return null;
+    }
+
+    // Get position from translateY
+    function getPositionFromTranslateY(translateY) {
+        return Math.floor(translateY / 36) + 1;
+    }
+
+    // Get translateY from row
+    function getTranslateYFromRow(row) {
+        const style = window.getComputedStyle(row);
         const transform = style.transform || style.webkitTransform || style.mozTransform;
+        
+        if (!transform || transform === 'none') {
+            const inlineStyle = row.getAttribute('style');
+            const translateYMatch = inlineStyle ? inlineStyle.match(/translateY\((\d+)px\)/) : null;
+            if (translateYMatch) {
+                return parseInt(translateYMatch[1], 10);
+            }
+            return null;
+        }
         
         let translateY = 0;
         
-        if (!transform || transform === 'none') {
-            // Try inline style as fallback
-            const inlineStyle = userRow.getAttribute('style');
-            const translateYMatch = inlineStyle ? inlineStyle.match(/translateY\((\d+)px\)/) : null;
-            
-            if (!translateYMatch) {
-                showToast('Could not find translateY value.', 'error');
-                return;
-            }
-            
-            translateY = parseInt(translateYMatch[1], 10);
-        } else {
-            // Extract translateY from matrix or translate
-            if (transform.includes('matrix') || transform.includes('matrix3d')) {
-                // Matrix format: matrix(1, 0, 0, 1, tx, ty) or matrix3d(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, tx, ty, tz, 1)
-                const matrixMatch = transform.match(/matrix(?:3d)?\([^)]+\)/);
-                if (matrixMatch) {
-                    const values = matrixMatch[0].match(/[\d.]+/g);
-                    if (values && values.length >= 6) {
-                        translateY = parseFloat(values[values.length >= 14 ? 13 : 5]);
-                    }
-                }
-            } else if (transform.includes('translateY')) {
-                // Direct translateY format
-                const translateYMatch = transform.match(/translateY\(([^)]+)\)/);
-                if (translateYMatch) {
-                    translateY = parseFloat(translateYMatch[1]);
+        if (transform.includes('matrix') || transform.includes('matrix3d')) {
+            const matrixMatch = transform.match(/matrix(?:3d)?\([^)]+\)/);
+            if (matrixMatch) {
+                const values = matrixMatch[0].match(/[\d.]+/g);
+                if (values && values.length >= 6) {
+                    translateY = parseFloat(values[values.length >= 14 ? 13 : 5]);
                 }
             }
-            
-            if (translateY === 0 && !transform.includes('translateY')) {
-                // Fallback: check inline style
-                const inlineStyle = userRow.getAttribute('style');
-                const translateYMatch = inlineStyle ? inlineStyle.match(/translateY\((\d+)px\)/) : null;
-                
-                if (translateYMatch) {
-                    translateY = parseInt(translateYMatch[1], 10);
-                } else {
-                    showToast('Could not extract translateY value.', 'error');
-                    return;
-                }
+        } else if (transform.includes('translateY')) {
+            const translateYMatch = transform.match(/translateY\(([^)]+)\)/);
+            if (translateYMatch) {
+                translateY = parseFloat(translateYMatch[1]);
             }
         }
         
-        // Calculate position: translateY / 36 + 1
-        const position = Math.floor(translateY / 36) + 1;
+        if (translateY === 0 && !transform.includes('translateY')) {
+            const inlineStyle = row.getAttribute('style');
+            const translateYMatch = inlineStyle ? inlineStyle.match(/translateY\((\d+)px\)/) : null;
+            if (translateYMatch) {
+                translateY = parseInt(translateYMatch[1], 10);
+            } else {
+                return null;
+            }
+        }
+        
+        return translateY;
+    }
+
+    // Store active scroll interval for cancellation
+    let activeScrollInterval = null;
+    let activeScrollCallbacks = null;
+
+    // Cancel active scrolling
+    function cancelActiveScrolling() {
+        if (activeScrollInterval) {
+            clearInterval(activeScrollInterval);
+            activeScrollInterval = null;
+            
+            // Remove event listeners if they exist
+            if (activeScrollCallbacks && activeScrollCallbacks.cancelHandler) {
+                window.removeEventListener('keydown', activeScrollCallbacks.cancelHandler);
+            }
+            
+            activeScrollCallbacks = null;
+            showToast('Auto-scroll cancelled by user interaction.', 'error');
+        }
+    }
+
+
+    // Calculate and show percentile stats
+    function calculatePercentileStats(userRow, userPosition, userAttacks, top5PercentAttacks) {
+        const teamSize = getTeamSize();
+        if (!teamSize || teamSize <= 0) {
+            return; // Can't calculate without team size
+        }
+
+        // Calculate hits needed to beat top 5%
+        let hitsNeeded = null;
+        if (top5PercentAttacks !== null && userAttacks !== null) {
+            // Calculate how many more hits needed to beat the person at top 5% position
+            // We need to have more attacks than them to beat them
+            hitsNeeded = Math.max(0, top5PercentAttacks - userAttacks + 1);
+        }
+
+        // Show stats toast
+        showStatsToast(hitsNeeded, top5PercentAttacks);
+    }
+
+    // Show stats toast (hits needed to beat top 5%, top 5% attacks)
+    function showStatsToast(hitsNeeded, top5PercentAttacks) {
+        ensureAnimationStyle();
+        
+        // Remove existing stats toast if any
+        const existingToast = document.getElementById('torn-position-stats-toast');
+        if (existingToast) {
+            existingToast.remove();
+        }
+
+        let message = '';
+        if (hitsNeeded !== null) {
+            message += `Hits needed to beat top 5%: ${hitsNeeded}`;
+        }
+        if (top5PercentAttacks !== null) {
+            if (message) message += ' | ';
+            message += `Top 5% attacks: ${top5PercentAttacks}`;
+        }
+
+        if (!message) {
+            return; // No data to show
+        }
+
+        const toast = document.createElement('div');
+        toast.id = 'torn-position-stats-toast';
+        toast.textContent = message;
+        toast.style.cssText = `
+            position: fixed;
+            top: 165px;
+            right: 20px;
+            z-index: 999997;
+            padding: 15px 25px;
+            background-color: #2196F3;
+            color: white;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            font-size: 14px;
+            font-weight: bold;
+            animation: slideIn 0.3s ease-out;
+            max-width: 350px;
+            cursor: pointer;
+            transition: opacity 0.2s ease;
+        `;
+        
+        // Add click handler to dismiss toast
+        toast.addEventListener('click', () => {
+            toast.style.opacity = '0';
+            setTimeout(() => {
+                toast.remove();
+            }, 200);
+        });
+        
+        toast.addEventListener('mouseenter', () => {
+            toast.style.opacity = '0.9';
+        });
+        
+        toast.addEventListener('mouseleave', () => {
+            toast.style.opacity = '1';
+        });
+        
+        document.body.appendChild(toast);
+    }
+
+    // Calculate position from found row
+    function calculatePositionFromRow(userRow, top5PercentAttacks = null) {
+        // Get translateY and position
+        const translateY = getTranslateYFromRow(userRow);
+        if (translateY === null) {
+            showToast('Could not find translateY value.', 'error');
+            return;
+        }
+        
+        const position = getPositionFromTranslateY(translateY);
+        
+        // Get user's attack count
+        const userAttacks = getAttackCount(userRow);
         
         // Get team size and calculate percentile if available
         const teamSize = getTeamSize();
@@ -215,15 +335,26 @@
         }
         
         showToast(message, 'success');
+        
+        // Calculate and show percentile stats if we have team size and user attacks
+        if (teamSize && teamSize > 0 && userAttacks !== null) {
+            calculatePercentileStats(userRow, position, userAttacks, top5PercentAttacks);
+        }
     }
 
-    // Scroll and search for user's row
+    // Scroll and search for user's row and top 5% position
     function scrollAndFindRow() {
+        // Cancel any existing scroll
+        cancelActiveScrolling();
+
         const virtualContainer = document.querySelector('.virtualContainer___Ft72x');
         if (!virtualContainer) {
             showToast('Could not find the competition list container.', 'error');
             return;
         }
+
+        const teamSize = getTeamSize();
+        const top5PercentPosition = teamSize ? Math.ceil(teamSize * 0.05) : null;
 
         // Find the scrollable container (usually parent of virtual container)
         let scrollableElement = virtualContainer.parentElement;
@@ -240,31 +371,100 @@
             scrollableElement = window;
         }
 
+        // Set up cancellation listeners
+        const cancelHandler = () => {
+            cancelActiveScrolling();
+            window.removeEventListener('keydown', cancelHandler);
+        };
+        
+        window.addEventListener('keydown', cancelHandler);
+
         let scrollPosition = 0;
         const scrollStep = 300; // Scroll 300px at a time
         const maxScrollAttempts = 150; // Maximum number of scroll attempts
         let attempts = 0;
+        let userRow = null;
+        let top5PercentAttacks = null;
 
-        showToast('Scrolling to find your row...', 'success');
+        showToast('Scrolling to find your row and top 5% data...', 'success');
 
-        const scrollInterval = setInterval(() => {
+        activeScrollCallbacks = { cancelHandler, scrollableElement };
+
+        activeScrollInterval = setInterval(() => {
+            if (!activeScrollInterval) {
+                return; // Was cancelled
+            }
+
             attempts++;
             
-            // Check if row exists now
-            const userRow = document.querySelector('.dataGridRow___FAAJF.teamRow___R3ZLF.yourRow___R9Oi8');
-            if (userRow) {
-                clearInterval(scrollInterval);
+            // Check if user row exists now
+            if (!userRow) {
+                userRow = document.querySelector('.dataGridRow___FAAJF.teamRow___R3ZLF.yourRow___R9Oi8');
+            }
+
+            // Check if we can find top 5% position (usually at the top, but check anyway)
+            if (!top5PercentAttacks && top5PercentPosition) {
+                const allRows = document.querySelectorAll('.dataGridRow___FAAJF.teamRow___R3ZLF');
+                for (const row of allRows) {
+                    const translateY = getTranslateYFromRow(row);
+                    if (translateY !== null) {
+                        const position = getPositionFromTranslateY(translateY);
+                        if (position === top5PercentPosition || Math.abs(position - top5PercentPosition) <= 2) {
+                            const attacks = getAttackCount(row);
+                            if (attacks !== null) {
+                                top5PercentAttacks = attacks;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // If we found both, we're done
+            if (userRow && (top5PercentAttacks !== null || !top5PercentPosition)) {
+                clearInterval(activeScrollInterval);
+                activeScrollInterval = null;
+                
+                // Remove cancellation listeners
+                window.removeEventListener('keydown', cancelHandler);
+                activeScrollCallbacks = null;
+                
+                // Scroll back to top
+                if (scrollableElement === window) {
+                    window.scrollTo({ top: 0, behavior: 'auto' });
+                } else {
+                    scrollableElement.scrollTop = 0;
+                }
+                
                 // Small delay to ensure row is fully rendered
                 setTimeout(() => {
-                    calculatePositionFromRow(userRow);
+                    calculatePositionFromRow(userRow, top5PercentAttacks);
                 }, 150);
                 return;
             }
 
             // If we've tried too many times, give up
             if (attempts >= maxScrollAttempts) {
-                clearInterval(scrollInterval);
-                showToast('Could not find your row after scrolling. You may not be in the competition.', 'error');
+                clearInterval(activeScrollInterval);
+                activeScrollInterval = null;
+                
+                // Remove cancellation listeners
+                window.removeEventListener('keydown', cancelHandler);
+                activeScrollCallbacks = null;
+                
+                if (userRow) {
+                    // We found user but not top 5%, continue with what we have
+                    if (scrollableElement === window) {
+                        window.scrollTo({ top: 0, behavior: 'auto' });
+                    } else {
+                        scrollableElement.scrollTop = 0;
+                    }
+                    setTimeout(() => {
+                        calculatePositionFromRow(userRow, top5PercentAttacks);
+                    }, 150);
+                } else {
+                    showToast('Could not find your row after scrolling. You may not be in the competition.', 'error');
+                }
                 return;
             }
 
@@ -309,11 +509,55 @@
             return;
         }
         
-        calculatePositionFromRow(userRow);
+        // Try to find top 5% data in visible rows (top rows are usually visible)
+        const teamSize = getTeamSize();
+        let top5PercentAttacks = null;
+        if (teamSize && teamSize > 0) {
+            const top5PercentPosition = Math.ceil(teamSize * 0.05);
+            const allRows = document.querySelectorAll('.dataGridRow___FAAJF.teamRow___R3ZLF');
+            for (const row of allRows) {
+                const translateY = getTranslateYFromRow(row);
+                if (translateY !== null) {
+                    const position = getPositionFromTranslateY(translateY);
+                    if (position === top5PercentPosition || Math.abs(position - top5PercentPosition) <= 2) {
+                        const attacks = getAttackCount(row);
+                        if (attacks !== null) {
+                            top5PercentAttacks = attacks;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        
+        calculatePositionFromRow(userRow, top5PercentAttacks);
+    }
+
+    // Ensure animation style is added (only once)
+    function ensureAnimationStyle() {
+        if (!document.getElementById('torn-toast-animation-style')) {
+            const style = document.createElement('style');
+            style.id = 'torn-toast-animation-style';
+            style.textContent = `
+                @keyframes slideIn {
+                    from {
+                        transform: translateX(100%);
+                        opacity: 0;
+                    }
+                    to {
+                        transform: translateX(0);
+                        opacity: 1;
+                    }
+                }
+            `;
+            document.head.appendChild(style);
+        }
     }
 
     // Show toast notification
     function showToast(message, type = 'success') {
+        ensureAnimationStyle();
+        
         // Remove existing toast if any
         const existingToast = document.getElementById('torn-position-toast');
         if (existingToast) {
@@ -356,22 +600,6 @@
         toast.addEventListener('mouseleave', () => {
             toast.style.opacity = '1';
         });
-        
-        // Add animation
-        const style = document.createElement('style');
-        style.textContent = `
-            @keyframes slideIn {
-                from {
-                    transform: translateX(100%);
-                    opacity: 0;
-                }
-                to {
-                    transform: translateX(0);
-                    opacity: 1;
-                }
-            }
-        `;
-        document.head.appendChild(style);
         
         document.body.appendChild(toast);
         
