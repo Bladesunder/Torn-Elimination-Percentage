@@ -26,8 +26,24 @@
         }
     }
 
+    // Check if URL is a team page
+    function isTeamPage() {
+        const hash = window.location.hash;
+        return hash && /^#\/team\/\d+/.test(hash);
+    }
+
     // Create floating controls (input + button)
     function createControls() {
+        // Only show if on a team page
+        if (!isTeamPage()) {
+            // Remove controls if they exist but we're not on a team page
+            const existing = document.getElementById('torn-position-controls');
+            if (existing) {
+                existing.remove();
+            }
+            return;
+        }
+
         // Check if already exists
         if (document.getElementById('torn-position-controls')) {
             return;
@@ -39,10 +55,14 @@
             position: fixed;
             top: 20px;
             right: 20px;
-            z-index: 10000;
+            z-index: 999999;
             display: flex;
             align-items: center;
             gap: 10px;
+            background-color: rgba(0, 0, 0, 0.8);
+            padding: 10px 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
         `;
 
         // Create label and input for team size
@@ -52,7 +72,6 @@
             color: white;
             font-size: 14px;
             font-weight: bold;
-            text-shadow: 1px 1px 2px rgba(0,0,0,0.5);
         `;
 
         const input = document.createElement('input');
@@ -61,12 +80,14 @@
         input.placeholder = 'Enter team size';
         input.min = '1';
         input.style.cssText = `
-            width: 120px;
-            padding: 8px 12px;
+            width: 130px;
+            padding: 10px 14px;
             border: 2px solid #4CAF50;
-            border-radius: 5px;
+            border-radius: 6px;
             font-size: 14px;
+            font-weight: 500;
             background-color: white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         `;
 
         // Load saved team size
@@ -96,23 +117,28 @@
         button.textContent = 'Calculate';
         button.id = 'torn-position-calc-btn';
         button.style.cssText = `
-            padding: 10px 20px;
+            padding: 12px 24px;
             background-color: #4CAF50;
             color: white;
-            border: none;
-            border-radius: 5px;
+            border: 2px solid #45a049;
+            border-radius: 6px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 15px;
             font-weight: bold;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            box-shadow: 0 3px 8px rgba(0,0,0,0.4);
+            transition: all 0.2s ease;
         `;
         
         button.addEventListener('mouseenter', () => {
             button.style.backgroundColor = '#45a049';
+            button.style.transform = 'scale(1.05)';
+            button.style.boxShadow = '0 4px 12px rgba(0,0,0,0.5)';
         });
         
         button.addEventListener('mouseleave', () => {
             button.style.backgroundColor = '#4CAF50';
+            button.style.transform = 'scale(1)';
+            button.style.boxShadow = '0 3px 8px rgba(0,0,0,0.4)';
         });
         
         button.addEventListener('click', calculatePosition);
@@ -258,6 +284,12 @@
 
     // Calculate position
     function calculatePosition() {
+        // Check if on team page
+        if (!isTeamPage()) {
+            showToast('Please navigate to a team page to calculate position.', 'error');
+            return;
+        }
+
         // Find user's row (has class "yourRow___R9Oi8")
         const userRow = document.querySelector('.dataGridRow___FAAJF.teamRow___R3ZLF.yourRow___R9Oi8');
         
@@ -293,19 +325,37 @@
         toast.textContent = message;
         toast.style.cssText = `
             position: fixed;
-            top: 80px;
+            top: 95px;
             right: 20px;
-            z-index: 10001;
+            z-index: 999998;
             padding: 15px 25px;
             background-color: ${type === 'error' ? '#f44336' : '#4CAF50'};
             color: white;
-            border-radius: 5px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
             font-size: 14px;
             font-weight: bold;
             animation: slideIn 0.3s ease-out;
-            max-width: 300px;
+            max-width: 350px;
+            cursor: pointer;
+            transition: opacity 0.2s ease;
         `;
+        
+        // Add click handler to dismiss toast
+        toast.addEventListener('click', () => {
+            toast.style.opacity = '0';
+            setTimeout(() => {
+                toast.remove();
+            }, 200);
+        });
+        
+        toast.addEventListener('mouseenter', () => {
+            toast.style.opacity = '0.9';
+        });
+        
+        toast.addEventListener('mouseleave', () => {
+            toast.style.opacity = '1';
+        });
         
         // Add animation
         const style = document.createElement('style');
@@ -325,28 +375,34 @@
         
         document.body.appendChild(toast);
         
-        // Remove toast after 3 seconds
-        setTimeout(() => {
-            toast.style.animation = 'slideIn 0.3s ease-out reverse';
-            setTimeout(() => {
-                toast.remove();
-                style.remove();
-            }, 300);
-        }, 3000);
+        // Toast is now persistent - only removed on click or page refresh
+    }
+
+    // Function to check and update controls based on URL
+    function checkAndUpdateControls() {
+        if (isTeamPage()) {
+            createControls();
+        } else {
+            const existing = document.getElementById('torn-position-controls');
+            if (existing) {
+                existing.remove();
+            }
+        }
     }
 
     // Initialize when page loads
     if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', createControls);
+        document.addEventListener('DOMContentLoaded', checkAndUpdateControls);
     } else {
-        createControls();
+        checkAndUpdateControls();
     }
+    
+    // Handle hash changes (SPA navigation)
+    window.addEventListener('hashchange', checkAndUpdateControls);
     
     // Also handle dynamic content (SPA navigation)
     const observer = new MutationObserver(() => {
-        if (!document.getElementById('torn-position-controls')) {
-            createControls();
-        }
+        checkAndUpdateControls();
     });
     
     observer.observe(document.body, {
