@@ -1,14 +1,15 @@
 // ==UserScript==
-// @name         Torn: Competition Position Calculator
+// @name         Torn: Supremacy Merit Tracker
 // @namespace    http://tampermonkey.net/
-// @version      1.1
-// @description  Calculate your position in Torn competition rankings
+// @version      1.2
+// @description  Calculate your position relative to the top 5% of the team
 // @author       ARCANE [2297468]
 // @match        https://www.torn.com/page.php?sid=competition*
 // @grant        none
-// @license MIT
 // @updateURL    https://greasyfork.org/scripts/558648/meta.json
 // @downloadURL  https://greasyfork.org/scripts/558648/code.user.js
+// @license MIT
+
 // ==/UserScript==
 
 (function() {
