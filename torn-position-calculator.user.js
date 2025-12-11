@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn: Competition Position Calculator
 // @namespace    http://tampermonkey.net/
-// @version      1.0
+// @version      1.1
 // @description  Calculate your position in Torn competition rankings
 // @author       ARCANE [2297468]
 // @match        https://www.torn.com/page.php?sid=competition*
