@@ -1,9 +1,9 @@
 // ==UserScript==
-// @name         Torn Competition Position Calculator
+// @name         Torn: Competition Position Calculator
 // @namespace    http://tampermonkey.net/
 // @version      1.0
 // @description  Calculate your position in Torn competition rankings
-// @author       You
+// @author       ARCANE [2297468]
 // @match        https://www.torn.com/page.php?sid=competition*
 // @grant        none
 // ==/UserScript==
@@ -208,45 +208,148 @@
         return translateY;
     }
 
-    // Store active scroll interval for cancellation
-    let activeScrollInterval = null;
-    let activeScrollCallbacks = null;
+    // Store collected data
+    let collectedData = {
+        userRow: null,
+        userPosition: null,
+        userAttacks: null,
+        top5PercentAttacks: null,
+        top5PercentPosition: null
+    };
 
-    // Cancel active scrolling
-    function cancelActiveScrolling() {
-        if (activeScrollInterval) {
-            clearInterval(activeScrollInterval);
-            activeScrollInterval = null;
+    // Check if we have enough data and show toasts
+    function checkAndShowToasts() {
+        const teamSize = getTeamSize();
+        if (!teamSize || teamSize <= 0) {
+            return;
+        }
+
+        // Check if we have user data
+        if (!collectedData.userRow) {
+            collectedData.userRow = document.querySelector('.dataGridRow___FAAJF.teamRow___R3ZLF.yourRow___R9Oi8');
+            if (collectedData.userRow) {
+                const translateY = getTranslateYFromRow(collectedData.userRow);
+                if (translateY !== null) {
+                    collectedData.userPosition = getPositionFromTranslateY(translateY);
+                    collectedData.userAttacks = getAttackCount(collectedData.userRow);
+                }
+            }
+        }
+
+        // Check if we have top 5% data
+        if (!collectedData.top5PercentAttacks) {
+            const top5PercentPosition = Math.ceil(teamSize * 0.05);
+            collectedData.top5PercentPosition = top5PercentPosition;
             
-            // Remove event listeners if they exist
-            if (activeScrollCallbacks && activeScrollCallbacks.cancelHandler) {
-                window.removeEventListener('keydown', activeScrollCallbacks.cancelHandler);
+            const allRows = document.querySelectorAll('.dataGridRow___FAAJF.teamRow___R3ZLF');
+            for (const row of allRows) {
+                const translateY = getTranslateYFromRow(row);
+                if (translateY !== null) {
+                    const position = getPositionFromTranslateY(translateY);
+                    if (position === top5PercentPosition || Math.abs(position - top5PercentPosition) <= 2) {
+                        const attacks = getAttackCount(row);
+                        if (attacks !== null) {
+                            collectedData.top5PercentAttacks = attacks;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Check if we have both user and top 5% data
+        const hasAllData = collectedData.userRow && collectedData.userPosition !== null && collectedData.userAttacks !== null && 
+                          collectedData.top5PercentAttacks !== null && collectedData.top5PercentPosition !== null;
+
+        // Remove collecting toast if we have all data
+        if (hasAllData) {
+            const collectingToast = document.getElementById('torn-position-toast');
+            if (collectingToast && collectingToast.textContent.includes('Collecting data')) {
+                collectingToast.remove();
+            }
+        }
+
+        // If we have user data, show user toast
+        if (collectedData.userRow && collectedData.userPosition !== null && !document.getElementById('torn-position-user-toast')) {
+            const teamSize = getTeamSize();
+            const messageParts = [];
+            
+            if (teamSize && teamSize > 0) {
+                const percentile = ((collectedData.userPosition / teamSize) * 100).toFixed(2);
+                messageParts.push(`Your percentile: ${percentile}%`);
             }
             
-            activeScrollCallbacks = null;
-            showToast('Auto-scroll cancelled by user interaction.', 'error');
+            messageParts.push(`Position: ${collectedData.userPosition}`);
+            
+            if (collectedData.userAttacks !== null) {
+                messageParts.push(`Hits: ${collectedData.userAttacks}`);
+            }
+            
+            showUserToast(messageParts.join(' | '));
+        }
+
+        // If we have both user and top 5% data, show all toasts
+        if (hasAllData) {
+            // Show top 5% toast
+            const top5PercentPercentile = ((collectedData.top5PercentPosition / teamSize) * 100).toFixed(2);
+            showTop5PercentToast(collectedData.top5PercentPosition, collectedData.top5PercentAttacks, top5PercentPercentile);
+            
+            // Show difference toast
+            const difference = collectedData.userAttacks - collectedData.top5PercentAttacks;
+            showDifferenceToast(difference, collectedData.userAttacks, collectedData.top5PercentAttacks);
         }
     }
 
 
-    // Calculate and show percentile stats
-    function calculatePercentileStats(userRow, userPosition, userAttacks, top5PercentPosition, top5PercentAttacks) {
-        const teamSize = getTeamSize();
-        if (!teamSize || teamSize <= 0) {
-            return; // Can't calculate without team size
+
+    // Show user info toast
+    function showUserToast(message) {
+        ensureAnimationStyle();
+        
+        // Remove existing user toast if any
+        const existingToast = document.getElementById('torn-position-user-toast');
+        if (existingToast) {
+            existingToast.remove();
         }
 
-        // Show top 5% info toast
-        if (top5PercentAttacks !== null) {
-            const top5PercentPercentile = ((top5PercentPosition / teamSize) * 100).toFixed(2);
-            showTop5PercentToast(top5PercentPosition, top5PercentAttacks, top5PercentPercentile);
-        }
-
-        // Calculate and show difference/advantage
-        if (top5PercentAttacks !== null && userAttacks !== null) {
-            const difference = userAttacks - top5PercentAttacks;
-            showDifferenceToast(difference, userAttacks, top5PercentAttacks);
-        }
+        const toast = document.createElement('div');
+        toast.id = 'torn-position-user-toast';
+        toast.textContent = message;
+        toast.style.cssText = `
+            position: fixed;
+            top: 95px;
+            right: 20px;
+            z-index: 999998;
+            padding: 15px 25px;
+            background-color: #4CAF50;
+            color: white;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            font-size: 14px;
+            font-weight: bold;
+            animation: slideIn 0.3s ease-out;
+            max-width: 350px;
+            cursor: pointer;
+            transition: opacity 0.2s ease;
+        `;
+        
+        // Add click handler to dismiss toast
+        toast.addEventListener('click', () => {
+            toast.style.opacity = '0';
+            setTimeout(() => {
+                toast.remove();
+            }, 200);
+        });
+        
+        toast.addEventListener('mouseenter', () => {
+            toast.style.opacity = '0.9';
+        });
+        
+        toast.addEventListener('mouseleave', () => {
+            toast.style.opacity = '1';
+        });
+        
+        document.body.appendChild(toast);
     }
 
     // Show top 5% info toast
@@ -259,7 +362,7 @@
             existingToast.remove();
         }
 
-        const message = `5% position: ${top5PercentPosition} | Hits: ${top5PercentAttacks} | Percentile: ${top5PercentPercentile}%`;
+        const message = `5% percentile: ${top5PercentPercentile}% | Position: ${top5PercentPosition} | Hits: ${top5PercentAttacks}`;
 
         const toast = document.createElement('div');
         toast.id = 'torn-position-top5-toast';
@@ -311,18 +414,20 @@
             existingToast.remove();
         }
 
-        let message = '';
+        // Calculate delta (how many hits user needs to beat top 5%)
+        let delta = 0;
         if (difference > 0) {
-            // User has advantage
-            message = `Advantage: +${difference} hits above 5%`;
+            // User already has more hits
+            delta = 0;
         } else if (difference < 0) {
             // User needs more hits
-            const hitsNeeded = Math.abs(difference) + 1;
-            message = `Deficit: ${hitsNeeded} hits needed to beat 5%`;
+            delta = Math.abs(difference) + 1;
         } else {
-            // Tied
-            message = `Tied with 5%: Need 1 more hit to beat`;
+            // Tied, need 1 more
+            delta = 1;
         }
+        
+        const message = `Delta: ${delta}`;
 
         const toast = document.createElement('div');
         toast.id = 'torn-position-difference-toast';
@@ -364,180 +469,54 @@
         document.body.appendChild(toast);
     }
 
-    // Calculate position from found row
-    function calculatePositionFromRow(userRow, top5PercentAttacks = null) {
-        // Get translateY and position
-        const translateY = getTranslateYFromRow(userRow);
-        if (translateY === null) {
-            showToast('Could not find translateY value.', 'error');
-            return;
-        }
-        
-        const position = getPositionFromTranslateY(translateY);
-        
-        // Get user's attack count
-        const userAttacks = getAttackCount(userRow);
-        
-        // Get team size and calculate percentile if available
-        const teamSize = getTeamSize();
-        let message = `Your position: ${position}`;
-        
-        if (userAttacks !== null) {
-            message += ` | Hits: ${userAttacks}`;
-        }
-        
-        if (teamSize && teamSize > 0) {
-            const percentile = ((position / teamSize) * 100).toFixed(2);
-            message += ` | Percentile: ${percentile}%`;
-        }
-        
-        showToast(message, 'success');
-        
-        // Calculate and show percentile stats if we have team size and user attacks
-        if (teamSize && teamSize > 0 && userAttacks !== null) {
-            const top5PercentPosition = Math.ceil(teamSize * 0.05);
-            calculatePercentileStats(userRow, position, userAttacks, top5PercentPosition, top5PercentAttacks);
-        }
-    }
 
-    // Scroll and search for user's row and top 5% position
-    function scrollAndFindRow() {
-        // Cancel any existing scroll
-        cancelActiveScrolling();
-
-        const virtualContainer = document.querySelector('.virtualContainer___Ft72x');
-        if (!virtualContainer) {
-            showToast('Could not find the competition list container.', 'error');
-            return;
-        }
-
-        const teamSize = getTeamSize();
-        const top5PercentPosition = teamSize ? Math.ceil(teamSize * 0.05) : null;
-
-        // Find the scrollable container (usually parent of virtual container)
-        let scrollableElement = virtualContainer.parentElement;
-        while (scrollableElement && scrollableElement !== document.body) {
-            const overflow = window.getComputedStyle(scrollableElement).overflowY;
-            if (overflow === 'auto' || overflow === 'scroll') {
-                break;
-            }
-            scrollableElement = scrollableElement.parentElement;
-        }
-
-        // If no scrollable container found, use window
-        if (!scrollableElement || scrollableElement === document.body) {
-            scrollableElement = window;
-        }
-
-        // Set up cancellation listeners
-        const cancelHandler = () => {
-            cancelActiveScrolling();
-            window.removeEventListener('keydown', cancelHandler);
+    // Start passive data collection (no auto-scrolling)
+    function startPassiveDataCollection() {
+        // Reset collected data
+        collectedData = {
+            userRow: null,
+            userPosition: null,
+            userAttacks: null,
+            top5PercentAttacks: null,
+            top5PercentPosition: null
         };
-        
-        window.addEventListener('keydown', cancelHandler);
 
-        let scrollPosition = 0;
-        const scrollStep = 300; // Scroll 300px at a time
-        const maxScrollAttempts = 150; // Maximum number of scroll attempts
-        let attempts = 0;
-        let userRow = null;
-        let top5PercentAttacks = null;
+        showToast('Collecting data as you scroll...', 'success');
 
-        showToast('Scrolling to find your row and top 5% data...', 'success');
+        // Check immediately
+        checkAndShowToasts();
 
-        activeScrollCallbacks = { cancelHandler, scrollableElement };
-
-        activeScrollInterval = setInterval(() => {
-            if (!activeScrollInterval) {
-                return; // Was cancelled
-            }
-
-            attempts++;
+        // Set up MutationObserver to watch for DOM changes (rows appearing as user scrolls)
+        const virtualContainer = document.querySelector('.virtualContainer___Ft72x');
+        if (virtualContainer) {
+            const observer = new MutationObserver(() => {
+                checkAndShowToasts();
+                
+                // Stop observing once we have all data
+                if (collectedData.userRow && collectedData.userPosition !== null && 
+                    collectedData.userAttacks !== null && collectedData.top5PercentAttacks !== null) {
+                    observer.disconnect();
+                }
+            });
             
-            // Check if user row exists now
-            if (!userRow) {
-                userRow = document.querySelector('.dataGridRow___FAAJF.teamRow___R3ZLF.yourRow___R9Oi8');
-            }
+            observer.observe(virtualContainer, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['style']
+            });
+        }
 
-            // Check if we can find top 5% position (usually at the top, but check anyway)
-            if (!top5PercentAttacks && top5PercentPosition) {
-                const allRows = document.querySelectorAll('.dataGridRow___FAAJF.teamRow___R3ZLF');
-                for (const row of allRows) {
-                    const translateY = getTranslateYFromRow(row);
-                    if (translateY !== null) {
-                        const position = getPositionFromTranslateY(translateY);
-                        if (position === top5PercentPosition || Math.abs(position - top5PercentPosition) <= 2) {
-                            const attacks = getAttackCount(row);
-                            if (attacks !== null) {
-                                top5PercentAttacks = attacks;
-                                break;
-                            }
-                        }
-                    }
-                }
+        // Also set up periodic checking as backup (passive - only reads data, doesn't scroll)
+        const checkInterval = setInterval(() => {
+            checkAndShowToasts();
+            
+            // Stop checking once we have all data
+            if (collectedData.userRow && collectedData.userPosition !== null && 
+                collectedData.userAttacks !== null && collectedData.top5PercentAttacks !== null) {
+                clearInterval(checkInterval);
             }
-
-            // If we found both, we're done
-            if (userRow && (top5PercentAttacks !== null || !top5PercentPosition)) {
-                clearInterval(activeScrollInterval);
-                activeScrollInterval = null;
-                
-                // Remove cancellation listeners
-                window.removeEventListener('keydown', cancelHandler);
-                activeScrollCallbacks = null;
-                
-                // Scroll back to top
-                if (scrollableElement === window) {
-                    window.scrollTo({ top: 0, behavior: 'auto' });
-                } else {
-                    scrollableElement.scrollTop = 0;
-                }
-                
-                // Small delay to ensure row is fully rendered
-                setTimeout(() => {
-                    calculatePositionFromRow(userRow, top5PercentAttacks);
-                }, 150);
-                return;
-            }
-
-            // If we've tried too many times, give up
-            if (attempts >= maxScrollAttempts) {
-                clearInterval(activeScrollInterval);
-                activeScrollInterval = null;
-                
-                // Remove cancellation listeners
-                window.removeEventListener('keydown', cancelHandler);
-                activeScrollCallbacks = null;
-                
-                if (userRow) {
-                    // We found user but not top 5%, continue with what we have
-                    if (scrollableElement === window) {
-                        window.scrollTo({ top: 0, behavior: 'auto' });
-                    } else {
-                        scrollableElement.scrollTop = 0;
-                    }
-                    setTimeout(() => {
-                        calculatePositionFromRow(userRow, top5PercentAttacks);
-                    }, 150);
-                } else {
-                    showToast('Could not find your row after scrolling. You may not be in the competition.', 'error');
-                }
-                return;
-            }
-
-            // Scroll down
-            if (scrollableElement === window) {
-                scrollPosition += scrollStep;
-                window.scrollTo({
-                    top: scrollPosition,
-                    behavior: 'auto' // Use 'auto' for faster scrolling
-                });
-            } else {
-                scrollPosition += scrollStep;
-                scrollableElement.scrollTop = scrollPosition;
-            }
-        }, 150); // Check every 150ms
+        }, 1000); // Check every 1 second as backup
     }
 
     // Calculate position
@@ -548,47 +527,8 @@
             return;
         }
 
-        // Find user's row (has class "yourRow___R9Oi8")
-        const userRow = document.querySelector('.dataGridRow___FAAJF.teamRow___R3ZLF.yourRow___R9Oi8');
-        
-        if (!userRow) {
-            // Ask user for permission to scroll
-            const shouldScroll = confirm(
-                'Could not find your row in the visible area.\n\n' +
-                'Would you like the script to scroll the page to find your row?\n\n' +
-                'Click OK to start scrolling, or Cancel to abort.'
-            );
-            
-            if (shouldScroll) {
-                scrollAndFindRow();
-            } else {
-                showToast('Search cancelled. Make sure you can see yourself in the list.', 'error');
-            }
-            return;
-        }
-        
-        // Try to find top 5% data in visible rows (top rows are usually visible)
-        const teamSize = getTeamSize();
-        let top5PercentAttacks = null;
-        if (teamSize && teamSize > 0) {
-            const top5PercentPosition = Math.ceil(teamSize * 0.05);
-            const allRows = document.querySelectorAll('.dataGridRow___FAAJF.teamRow___R3ZLF');
-            for (const row of allRows) {
-                const translateY = getTranslateYFromRow(row);
-                if (translateY !== null) {
-                    const position = getPositionFromTranslateY(translateY);
-                    if (position === top5PercentPosition || Math.abs(position - top5PercentPosition) <= 2) {
-                        const attacks = getAttackCount(row);
-                        if (attacks !== null) {
-                            top5PercentAttacks = attacks;
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-        
-        calculatePositionFromRow(userRow, top5PercentAttacks);
+        // Start passive data collection (no auto-scrolling)
+        startPassiveDataCollection();
     }
 
     // Ensure animation style is added (only once)
@@ -697,4 +637,3 @@
     });
 
 })();
-
