@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         Torn: Supremacy Merit Tracker
+// @name         Torn: Supremacy Merit Helper
 // @namespace    http://tampermonkey.net/
 // @version      1.2
 // @description  Calculate your position relative to the top 5% of the team
@@ -14,6 +14,8 @@
 
 (function() {
     'use strict';
+    
+    console.log('[Supremacy Merit Helper] Script loaded - URL:', window.location.href);
 
     // Get team size from localStorage
     function getTeamSize() {
@@ -34,6 +36,117 @@
     function isTeamPage() {
         const hash = window.location.hash;
         return hash && /^#\/team\/\d+/.test(hash);
+    }
+
+    // Check if URL is the main competition page
+    function isCompetitionMainPage() {
+        const hash = window.location.hash;
+        // Main page can be empty, '#', '#/', or just '/'
+        const isMain = !hash || hash === '#' || hash === '' || hash === '#/' || hash === '/';
+        console.log('[Supremacy Merit Helper] isCompetitionMainPage check - hash:', hash, 'isMain:', isMain);
+        return isMain;
+    }
+
+    // Auto-detect team size from competition page
+    function autoDetectTeamSize() {
+        // Only try on main competition page
+        if (!isCompetitionMainPage()) {
+            console.log('[Supremacy Merit Helper] Not on competition main page, skipping auto-detect');
+            return null;
+        }
+
+        console.log('[Supremacy Merit Helper] Attempting to auto-detect team size...');
+
+        // Try multiple approaches to find user's team row
+        let userTeamRow = null;
+        
+        // Approach 1: Try the full selector
+        userTeamRow = document.querySelector('.dataGridRow___FAAJF.row___jLX1I.yourRow___R9Oi8');
+        if (userTeamRow) {
+            console.log('[Supremacy Merit Helper] Found user team row using full selector');
+        } else {
+            // Approach 2: Try just the yourRow class (more flexible)
+            userTeamRow = document.querySelector('.yourRow___R9Oi8');
+            if (userTeamRow) {
+                console.log('[Supremacy Merit Helper] Found user team row using .yourRow___R9Oi8 selector');
+            } else {
+                // Approach 3: Try finding within dataGridBody
+                const dataGridBody = document.querySelector('.dataGridBody___Y9aVA');
+                if (dataGridBody) {
+                    userTeamRow = dataGridBody.querySelector('.yourRow___R9Oi8');
+                    if (userTeamRow) {
+                        console.log('[Supremacy Merit Helper] Found user team row within dataGridBody');
+                    }
+                }
+            }
+        }
+
+        if (!userTeamRow) {
+            console.log('[Supremacy Merit Helper] Could not find user team row with any selector');
+            // Debug: log all rows with yourRow class
+            const allYourRows = document.querySelectorAll('.yourRow___R9Oi8');
+            console.log('[Supremacy Merit Helper] Found', allYourRows.length, 'elements with .yourRow___R9Oi8 class');
+            return null;
+        }
+
+        console.log('[Supremacy Merit Helper] Found user team row:', userTeamRow);
+
+        // Find members cell - try multiple approaches
+        let membersCell = userTeamRow.querySelector('.membersCell___qpI4n');
+        if (!membersCell) {
+            // Try finding within the row's children
+            const rowChildren = userTeamRow.querySelectorAll('.dataGridData___dV6BM.membersCell___qpI4n');
+            if (rowChildren.length > 0) {
+                membersCell = rowChildren[0];
+                console.log('[Supremacy Merit Helper] Found members cell using alternative selector');
+            }
+        }
+
+        if (!membersCell) {
+            console.log('[Supremacy Merit Helper] Could not find members cell');
+            // Debug: log what cells we can find
+            const allCells = userTeamRow.querySelectorAll('.dataGridData___dV6BM');
+            console.log('[Supremacy Merit Helper] Found', allCells.length, 'dataGridData cells in row');
+            return null;
+        }
+
+        console.log('[Supremacy Merit Helper] Found members cell:', membersCell);
+
+        // Extract number from the span (e.g., "1,607" -> 1607)
+        // Try textContent first, then innerText, then look for span
+        let membersText = membersCell.textContent || membersCell.innerText;
+        if (!membersText || membersText.trim() === '') {
+            // Try finding span within members cell
+            const span = membersCell.querySelector('span');
+            if (span) {
+                membersText = span.textContent || span.innerText;
+                console.log('[Supremacy Merit Helper] Found text in span:', membersText);
+            }
+        }
+
+        if (!membersText || membersText.trim() === '') {
+            console.log('[Supremacy Merit Helper] Members cell has no text content');
+            console.log('[Supremacy Merit Helper] Members cell HTML:', membersCell.innerHTML);
+            return null;
+        }
+
+        console.log('[Supremacy Merit Helper] Members text:', membersText);
+
+        // Remove commas and extract number
+        const numberMatch = membersText.match(/[\d,]+/);
+        if (!numberMatch) {
+            console.log('[Supremacy Merit Helper] Could not extract number from members text');
+            return null;
+        }
+
+        const teamSize = parseInt(numberMatch[0].replace(/,/g, ''), 10);
+        if (teamSize && teamSize > 0) {
+            console.log('[Supremacy Merit Helper] Identified teamSize:', teamSize);
+            return teamSize;
+        }
+
+        console.log('[Supremacy Merit Helper] Failed to parse valid team size from:', numberMatch[0]);
+        return null;
     }
 
     // Create floating controls (input + button)
@@ -94,9 +207,20 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         `;
 
-        // Load saved team size
-        const savedTeamSize = getTeamSize();
+        // Load saved team size or auto-detect
+        let savedTeamSize = getTeamSize();
+        console.log('[Supremacy Merit Helper] Loaded saved team size from localStorage:', savedTeamSize);
+        if (!savedTeamSize) {
+            // Try to auto-detect from competition page
+            const detectedSize = autoDetectTeamSize();
+            if (detectedSize) {
+                savedTeamSize = detectedSize;
+                console.log('[Supremacy Merit Helper] Auto-detected and saving teamSize:', detectedSize);
+                saveTeamSize(detectedSize);
+            }
+        }
         if (savedTeamSize) {
+            console.log('[Supremacy Merit Helper] Setting input value to teamSize:', savedTeamSize);
             input.value = savedTeamSize;
         }
 
@@ -485,7 +609,7 @@
             top5PercentPosition: null
         };
 
-        showToast('Collecting data as you scroll...', 'success');
+        showToast('Keep scrolling until you see a popup', 'success');
 
         // Check immediately
         checkAndShowToasts();
@@ -610,12 +734,63 @@
 
     // Function to check and update controls based on URL
     function checkAndUpdateControls() {
+        console.log('[Supremacy Merit Helper] checkAndUpdateControls called - URL:', window.location.href, 'Hash:', window.location.hash);
+        
         if (isTeamPage()) {
+            console.log('[Supremacy Merit Helper] On team page, creating controls');
             createControls();
         } else {
+            console.log('[Supremacy Merit Helper] Not on team page, removing controls if they exist');
             const existing = document.getElementById('torn-position-controls');
             if (existing) {
                 existing.remove();
+            }
+        }
+        
+        // Auto-detect team size on competition main page
+        if (isCompetitionMainPage()) {
+            console.log('[Supremacy Merit Helper] On competition main page, attempting auto-detect');
+            // Helper function to handle detected team size
+            const handleDetectedTeamSize = (detectedSize) => {
+                // Save if not already saved
+                const currentSaved = getTeamSize();
+                if (!currentSaved || currentSaved !== detectedSize) {
+                    console.log('[Supremacy Merit Helper] Saving teamSize to localStorage:', detectedSize);
+                    saveTeamSize(detectedSize);
+                } else {
+                    console.log('[Supremacy Merit Helper] Team size already saved:', currentSaved);
+                }
+                // Update input if it exists (user might be on team page after visiting main page)
+                const input = document.getElementById('torn-position-team-size-input');
+                if (input && !input.value) {
+                    console.log('[Supremacy Merit Helper] Updating input field with teamSize:', detectedSize);
+                    input.value = detectedSize;
+                }
+            };
+            
+            // Try immediate detection
+            let detectedSize = autoDetectTeamSize();
+            
+            if (detectedSize) {
+                handleDetectedTeamSize(detectedSize);
+            } else {
+                // If not found, retry with delays (content might be loading)
+                console.log('[Supremacy Merit Helper] Retrying team size detection with delays...');
+                setTimeout(() => {
+                    detectedSize = autoDetectTeamSize();
+                    if (detectedSize) {
+                        handleDetectedTeamSize(detectedSize);
+                    } else {
+                        setTimeout(() => {
+                            detectedSize = autoDetectTeamSize();
+                            if (detectedSize) {
+                                handleDetectedTeamSize(detectedSize);
+                            } else {
+                                console.log('[Supremacy Merit Helper] Could not detect team size after retries');
+                            }
+                        }, 1000);
+                    }
+                }, 500);
             }
         }
     }
@@ -628,11 +803,22 @@
     }
     
     // Handle hash changes (SPA navigation)
-    window.addEventListener('hashchange', checkAndUpdateControls);
-    
-    // Also handle dynamic content (SPA navigation)
-    const observer = new MutationObserver(() => {
+    window.addEventListener('hashchange', () => {
+        console.log('[Supremacy Merit Helper] Hash changed, calling checkAndUpdateControls');
         checkAndUpdateControls();
+    });
+    
+    // Also handle dynamic content (SPA navigation) - throttled
+    let mutationTimeout = null;
+    const observer = new MutationObserver(() => {
+        // Throttle to avoid excessive calls
+        if (mutationTimeout) {
+            clearTimeout(mutationTimeout);
+        }
+        mutationTimeout = setTimeout(() => {
+            console.log('[Supremacy Merit Helper] DOM mutation detected, calling checkAndUpdateControls');
+            checkAndUpdateControls();
+        }, 300);
     });
     
     observer.observe(document.body, {
