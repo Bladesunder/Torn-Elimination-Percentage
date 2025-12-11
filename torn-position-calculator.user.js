@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn: Supremacy Merit Helper
 // @namespace    http://tampermonkey.net/
-// @version      1.2
+// @version      1.3
 // @description  Calculate your position relative to the top 5% of the team
 // @author       ARCANE [2297468]
 // @match        https://www.torn.com/page.php?sid=competition*
