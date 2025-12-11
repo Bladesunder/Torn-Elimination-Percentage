@@ -6,6 +6,9 @@
 // @author       ARCANE [2297468]
 // @match        https://www.torn.com/page.php?sid=competition*
 // @grant        none
+// @license MIT
+// @updateURL    https://greasyfork.org/scripts/558648/meta.json
+// @downloadURL  https://greasyfork.org/scripts/558648/code.user.js
 // ==/UserScript==
 
 (function() {
