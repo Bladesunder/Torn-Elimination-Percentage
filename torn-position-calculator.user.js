@@ -230,49 +230,39 @@
 
 
     // Calculate and show percentile stats
-    function calculatePercentileStats(userRow, userPosition, userAttacks, top5PercentAttacks) {
+    function calculatePercentileStats(userRow, userPosition, userAttacks, top5PercentPosition, top5PercentAttacks) {
         const teamSize = getTeamSize();
         if (!teamSize || teamSize <= 0) {
             return; // Can't calculate without team size
         }
 
-        // Calculate hits needed to beat top 5%
-        let hitsNeeded = null;
-        if (top5PercentAttacks !== null && userAttacks !== null) {
-            // Calculate how many more hits needed to beat the person at top 5% position
-            // We need to have more attacks than them to beat them
-            hitsNeeded = Math.max(0, top5PercentAttacks - userAttacks + 1);
+        // Show top 5% info toast
+        if (top5PercentAttacks !== null) {
+            const top5PercentPercentile = ((top5PercentPosition / teamSize) * 100).toFixed(2);
+            showTop5PercentToast(top5PercentPosition, top5PercentAttacks, top5PercentPercentile);
         }
 
-        // Show stats toast
-        showStatsToast(hitsNeeded, top5PercentAttacks);
+        // Calculate and show difference/advantage
+        if (top5PercentAttacks !== null && userAttacks !== null) {
+            const difference = userAttacks - top5PercentAttacks;
+            showDifferenceToast(difference, userAttacks, top5PercentAttacks);
+        }
     }
 
-    // Show stats toast (hits needed to beat top 5%, top 5% attacks)
-    function showStatsToast(hitsNeeded, top5PercentAttacks) {
+    // Show top 5% info toast
+    function showTop5PercentToast(top5PercentPosition, top5PercentAttacks, top5PercentPercentile) {
         ensureAnimationStyle();
         
-        // Remove existing stats toast if any
-        const existingToast = document.getElementById('torn-position-stats-toast');
+        // Remove existing top 5% toast if any
+        const existingToast = document.getElementById('torn-position-top5-toast');
         if (existingToast) {
             existingToast.remove();
         }
 
-        let message = '';
-        if (hitsNeeded !== null) {
-            message += `Hits needed to beat top 5%: ${hitsNeeded}`;
-        }
-        if (top5PercentAttacks !== null) {
-            if (message) message += ' | ';
-            message += `Top 5% attacks: ${top5PercentAttacks}`;
-        }
-
-        if (!message) {
-            return; // No data to show
-        }
+        const message = `5% position: ${top5PercentPosition} | Hits: ${top5PercentAttacks} | Percentile: ${top5PercentPercentile}%`;
 
         const toast = document.createElement('div');
-        toast.id = 'torn-position-stats-toast';
+        toast.id = 'torn-position-top5-toast';
         toast.textContent = message;
         toast.style.cssText = `
             position: fixed;
@@ -281,6 +271,69 @@
             z-index: 999997;
             padding: 15px 25px;
             background-color: #2196F3;
+            color: white;
+            border-radius: 6px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+            font-size: 14px;
+            font-weight: bold;
+            animation: slideIn 0.3s ease-out;
+            max-width: 350px;
+            cursor: pointer;
+            transition: opacity 0.2s ease;
+        `;
+        
+        // Add click handler to dismiss toast
+        toast.addEventListener('click', () => {
+            toast.style.opacity = '0';
+            setTimeout(() => {
+                toast.remove();
+            }, 200);
+        });
+        
+        toast.addEventListener('mouseenter', () => {
+            toast.style.opacity = '0.9';
+        });
+        
+        toast.addEventListener('mouseleave', () => {
+            toast.style.opacity = '1';
+        });
+        
+        document.body.appendChild(toast);
+    }
+
+    // Show difference/advantage toast
+    function showDifferenceToast(difference, userAttacks, top5PercentAttacks) {
+        ensureAnimationStyle();
+        
+        // Remove existing difference toast if any
+        const existingToast = document.getElementById('torn-position-difference-toast');
+        if (existingToast) {
+            existingToast.remove();
+        }
+
+        let message = '';
+        if (difference > 0) {
+            // User has advantage
+            message = `Advantage: +${difference} hits above 5%`;
+        } else if (difference < 0) {
+            // User needs more hits
+            const hitsNeeded = Math.abs(difference) + 1;
+            message = `Deficit: ${hitsNeeded} hits needed to beat 5%`;
+        } else {
+            // Tied
+            message = `Tied with 5%: Need 1 more hit to beat`;
+        }
+
+        const toast = document.createElement('div');
+        toast.id = 'torn-position-difference-toast';
+        toast.textContent = message;
+        toast.style.cssText = `
+            position: fixed;
+            top: 235px;
+            right: 20px;
+            z-index: 999996;
+            padding: 15px 25px;
+            background-color: ${difference > 0 ? '#4CAF50' : '#FF9800'};
             color: white;
             border-radius: 6px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.5);
@@ -327,7 +380,11 @@
         
         // Get team size and calculate percentile if available
         const teamSize = getTeamSize();
-        let message = `Position: ${position}`;
+        let message = `Your position: ${position}`;
+        
+        if (userAttacks !== null) {
+            message += ` | Hits: ${userAttacks}`;
+        }
         
         if (teamSize && teamSize > 0) {
             const percentile = ((position / teamSize) * 100).toFixed(2);
@@ -338,7 +395,8 @@
         
         // Calculate and show percentile stats if we have team size and user attacks
         if (teamSize && teamSize > 0 && userAttacks !== null) {
-            calculatePercentileStats(userRow, position, userAttacks, top5PercentAttacks);
+            const top5PercentPosition = Math.ceil(teamSize * 0.05);
+            calculatePercentileStats(userRow, position, userAttacks, top5PercentPosition, top5PercentAttacks);
         }
     }
 
