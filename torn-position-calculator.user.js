@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn: Supremacy Merit Helper
 // @namespace    http://tampermonkey.net/
-// @version      1.4
+// @version      1.5
 // @description  Calculate your position relative to the top 5% of the team
 // @author       ARCANE [2297468]
 // @match        https://www.torn.com/page.php?sid=competition*
@@ -665,20 +665,11 @@
             existingToast.remove();
         }
 
-        // Calculate delta (how many hits user needs to beat top 5%)
-        let delta = 0;
-        if (difference > 0) {
-            // User already has more hits
-            delta = 0;
-        } else if (difference < 0) {
-            // User needs more hits
-            delta = Math.abs(difference) + 1;
-        } else {
-            // Tied, need 1 more
-            delta = 1;
-        }
+        // Calculate delta (difference between user and top 5%)
+        // Positive delta means user has more hits, negative means user needs more hits
+        const delta = difference;
         
-        const message = `Delta: ${delta}`;
+        const message = `Delta: ${delta > 0 ? '+' : ''}${delta}`;
 
         const toast = document.createElement('div');
         toast.id = 'torn-position-difference-toast';
