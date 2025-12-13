@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn: Supremacy Merit Helper
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.6
 // @description  Calculate your position relative to the top 5% of the team
 // @author       ARCANE [2297468]
 // @match        https://www.torn.com/page.php?sid=competition*
@@ -767,6 +767,40 @@
         if (!isTeamPage()) {
             showToast('Please navigate to a team page to calculate position.', 'error');
             return;
+        }
+
+        // Toggle off "show-available-targets" checkbox if it's on
+        const showAvailableTargetsCheckbox = document.getElementById('show-available-targets');
+        if (showAvailableTargetsCheckbox) {
+            const wasChecked = showAvailableTargetsCheckbox.checked;
+            console.log('[Supremacy Merit Helper] "show-available-targets" checkbox state before toggle:', wasChecked);
+            
+            if (wasChecked) {
+                // Try clicking the label first (most natural way to trigger checkbox in Torn's UI)
+                const label = document.querySelector('label[for="show-available-targets"]');
+                if (label) {
+                    console.log('[Supremacy Merit Helper] Clicking label to toggle checkbox');
+                    label.click();
+                } else {
+                    // Fallback: manually uncheck and trigger events
+                    showAvailableTargetsCheckbox.checked = false;
+                    // Trigger multiple events to ensure Torn's UI updates
+                    const events = ['change', 'input', 'click'];
+                    events.forEach(eventType => {
+                        showAvailableTargetsCheckbox.dispatchEvent(new Event(eventType, { bubbles: true, cancelable: true }));
+                    });
+                    console.log('[Supremacy Merit Helper] Toggled off "show-available-targets" checkbox via events');
+                }
+            } else {
+                console.log('[Supremacy Merit Helper] "show-available-targets" checkbox was already off');
+            }
+            
+            // Log final state after a brief delay to allow UI to update
+            setTimeout(() => {
+                console.log('[Supremacy Merit Helper] "show-available-targets" checkbox state after toggle:', showAvailableTargetsCheckbox.checked);
+            }, 100);
+        } else {
+            console.log('[Supremacy Merit Helper] Could not find "show-available-targets" checkbox');
         }
 
         // Start passive data collection (no auto-scrolling)
