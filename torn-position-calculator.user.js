@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn: Supremacy Merit Helper
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.6.2
 // @description  Calculate your position relative to the top 5% of the team
 // @author       ARCANE [2297468]
 // @match        https://www.torn.com/page.php?sid=competition*
@@ -492,7 +492,11 @@
             const top5PercentPosition = Math.ceil(teamSize * 0.05);
             collectedData.top5PercentPosition = top5PercentPosition;
             
+            console.log('[Supremacy Merit Helper] Looking for top 5% position:', top5PercentPosition, 'out of team size:', teamSize);
+            
             const allRows = document.querySelectorAll('.dataGridRow___FAAJF.teamRow___R3ZLF');
+            console.log('[Supremacy Merit Helper] Found', allRows.length, 'team rows to check');
+            
             for (const row of allRows) {
                 const translateY = getTranslateYFromRow(row);
                 if (translateY !== null) {
@@ -500,11 +504,16 @@
                     if (position === top5PercentPosition || Math.abs(position - top5PercentPosition) <= 2) {
                         const attacks = getAttackCount(row);
                         if (attacks !== null) {
+                            console.log('[Supremacy Merit Helper] Found top 5% player at position:', position, 'with', attacks, 'attacks');
                             collectedData.top5PercentAttacks = attacks;
                             break;
                         }
                     }
                 }
+            }
+            
+            if (!collectedData.top5PercentAttacks) {
+                console.log('[Supremacy Merit Helper] Could not find top 5% player data yet');
             }
         }
 
@@ -539,15 +548,19 @@
             showUserToast(messageParts.join(' | '));
         }
 
-        // If we have both user and top 5% data, show all toasts
+        // If we have both user and top 5% data, show all toasts (only if they don't already exist)
         if (hasAllData) {
-            // Show top 5% toast
-            const top5PercentPercentile = ((collectedData.top5PercentPosition / teamSize) * 100).toFixed(2);
-            showTop5PercentToast(collectedData.top5PercentPosition, collectedData.top5PercentAttacks, top5PercentPercentile);
+            // Show top 5% toast (only if it doesn't exist)
+            if (!document.getElementById('torn-position-top5-toast')) {
+                const top5PercentPercentile = ((collectedData.top5PercentPosition / teamSize) * 100).toFixed(2);
+                showTop5PercentToast(collectedData.top5PercentPosition, collectedData.top5PercentAttacks, top5PercentPercentile);
+            }
             
-            // Show difference toast
-            const difference = collectedData.userAttacks - collectedData.top5PercentAttacks;
-            showDifferenceToast(difference, collectedData.userAttacks, collectedData.top5PercentAttacks);
+            // Show difference toast (only if it doesn't exist)
+            if (!document.getElementById('torn-position-difference-toast')) {
+                const difference = collectedData.userAttacks - collectedData.top5PercentAttacks;
+                showDifferenceToast(difference, collectedData.userAttacks, collectedData.top5PercentAttacks);
+            }
         }
     }
 
@@ -735,8 +748,11 @@
                 checkAndShowToasts();
                 
                 // Stop observing once we have all data
-                if (collectedData.userRow && collectedData.userPosition !== null && 
-                    collectedData.userAttacks !== null && collectedData.top5PercentAttacks !== null) {
+                const hasAllData = collectedData.userRow && collectedData.userPosition !== null && 
+                    collectedData.userAttacks !== null && collectedData.top5PercentAttacks !== null && 
+                    collectedData.top5PercentPosition !== null;
+                if (hasAllData) {
+                    console.log('[Supremacy Merit Helper] All data collected, disconnecting observer');
                     observer.disconnect();
                 }
             });
@@ -750,15 +766,38 @@
         }
 
         // Also set up periodic checking as backup (passive - only reads data, doesn't scroll)
+        // Start with more frequent checks, then slow down after a bit
+        let checkCount = 0;
         const checkInterval = setInterval(() => {
             checkAndShowToasts();
+            checkCount++;
             
             // Stop checking once we have all data
-            if (collectedData.userRow && collectedData.userPosition !== null && 
-                collectedData.userAttacks !== null && collectedData.top5PercentAttacks !== null) {
+            const hasAllData = collectedData.userRow && collectedData.userPosition !== null && 
+                collectedData.userAttacks !== null && collectedData.top5PercentAttacks !== null && 
+                collectedData.top5PercentPosition !== null;
+            if (hasAllData) {
+                console.log('[Supremacy Merit Helper] All data collected, stopping interval');
                 clearInterval(checkInterval);
+            } else if (checkCount > 10) {
+                // After 10 checks (10 seconds), log what we're missing for debugging
+                if (!collectedData.userRow) {
+                    console.log('[Supremacy Merit Helper] Still missing after 10s: userRow');
+                }
+                if (collectedData.userPosition === null) {
+                    console.log('[Supremacy Merit Helper] Still missing after 10s: userPosition');
+                }
+                if (collectedData.userAttacks === null) {
+                    console.log('[Supremacy Merit Helper] Still missing after 10s: userAttacks');
+                }
+                if (collectedData.top5PercentAttacks === null) {
+                    console.log('[Supremacy Merit Helper] Still missing after 10s: top5PercentAttacks');
+                }
+                if (collectedData.top5PercentPosition === null) {
+                    console.log('[Supremacy Merit Helper] Still missing after 10s: top5PercentPosition');
+                }
             }
-        }, 1000); // Check every 1 second as backup
+        }, 500); // Check every 500ms for faster initial detection
     }
 
     // Calculate position
@@ -771,6 +810,8 @@
 
         // Toggle off "show-available-targets" checkbox if it's on
         const showAvailableTargetsCheckbox = document.getElementById('show-available-targets');
+        let checkboxWasToggled = false;
+        
         if (showAvailableTargetsCheckbox) {
             const wasChecked = showAvailableTargetsCheckbox.checked;
             console.log('[Supremacy Merit Helper] "show-available-targets" checkbox state before toggle:', wasChecked);
@@ -781,6 +822,7 @@
                 if (label) {
                     console.log('[Supremacy Merit Helper] Clicking label to toggle checkbox');
                     label.click();
+                    checkboxWasToggled = true;
                 } else {
                     // Fallback: manually uncheck and trigger events
                     showAvailableTargetsCheckbox.checked = false;
@@ -790,6 +832,7 @@
                         showAvailableTargetsCheckbox.dispatchEvent(new Event(eventType, { bubbles: true, cancelable: true }));
                     });
                     console.log('[Supremacy Merit Helper] Toggled off "show-available-targets" checkbox via events');
+                    checkboxWasToggled = true;
                 }
             } else {
                 console.log('[Supremacy Merit Helper] "show-available-targets" checkbox was already off');
@@ -804,7 +847,16 @@
         }
 
         // Start passive data collection (no auto-scrolling)
-        startPassiveDataCollection();
+        // If checkbox was already off, add a small delay to ensure DOM is ready
+        if (checkboxWasToggled) {
+            // If we toggled it, start immediately (the toggle will trigger DOM refresh)
+            startPassiveDataCollection();
+        } else {
+            // If it was already off, wait a bit for DOM to be ready, then start
+            setTimeout(() => {
+                startPassiveDataCollection();
+            }, 200);
+        }
     }
 
     // Ensure animation style is added (only once)
@@ -881,8 +933,28 @@
     }
 
     // Function to check and update controls based on URL
+    let lastHash = null;
     function checkAndUpdateControls() {
-        console.log('[Supremacy Merit Helper] checkAndUpdateControls called - URL:', window.location.href, 'Hash:', window.location.hash);
+        const currentHash = window.location.hash;
+        
+        // Early exit if hash hasn't changed and controls already exist/not needed
+        if (currentHash === lastHash) {
+            const existingControls = document.getElementById('torn-position-controls');
+            const isTeam = isTeamPage();
+            
+            // If we're on a team page and controls exist, or not on team page and no controls, skip
+            if ((isTeam && existingControls) || (!isTeam && !existingControls)) {
+                // Only check for main page auto-detect if on main page
+                if (isCompetitionMainPage() && !getTeamSize()) {
+                    // Need to auto-detect, continue
+                } else {
+                    return; // Skip unnecessary work
+                }
+            }
+        }
+        
+        lastHash = currentHash;
+        console.log('[Supremacy Merit Helper] checkAndUpdateControls called - URL:', window.location.href, 'Hash:', currentHash);
         
         if (isTeamPage()) {
             console.log('[Supremacy Merit Helper] On team page, creating controls');
@@ -967,7 +1039,37 @@
     
     // Also handle dynamic content (SPA navigation) - throttled
     let mutationTimeout = null;
-    const observer = new MutationObserver(() => {
+    const observer = new MutationObserver((mutations) => {
+        // Skip mutations that are just our own toasts/controls being added/removed
+        const relevantMutations = mutations.filter(mutation => {
+            const target = mutation.target;
+            // Skip if mutation is on our own elements
+            if (target.id && (target.id.startsWith('torn-position-') || target.id === 'torn-toast-animation-style')) {
+                return false;
+            }
+            // Skip if mutation is adding/removing our own elements
+            if (mutation.addedNodes) {
+                for (const node of mutation.addedNodes) {
+                    if (node.nodeType === 1 && node.id && (node.id.startsWith('torn-position-') || node.id === 'torn-toast-animation-style')) {
+                        return false;
+                    }
+                }
+            }
+            if (mutation.removedNodes) {
+                for (const node of mutation.removedNodes) {
+                    if (node.nodeType === 1 && node.id && (node.id.startsWith('torn-position-') || node.id === 'torn-toast-animation-style')) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        });
+        
+        // Only process if there are relevant mutations
+        if (relevantMutations.length === 0) {
+            return;
+        }
+        
         // Throttle to avoid excessive calls
         if (mutationTimeout) {
             clearTimeout(mutationTimeout);
@@ -975,7 +1077,7 @@
         mutationTimeout = setTimeout(() => {
             console.log('[Supremacy Merit Helper] DOM mutation detected, calling checkAndUpdateControls');
             checkAndUpdateControls();
-        }, 300);
+        }, 1000); // Increased from 300ms to 1000ms for better performance
     });
     
     observer.observe(document.body, {
